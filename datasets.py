@@ -1,9 +1,7 @@
 import os
 import torch
-import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
-from torchvision import transforms, utils
 from PIL import Image
 
 class ImgDataset(Dataset):
