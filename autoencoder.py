@@ -1,3 +1,8 @@
+from clearml import Task 
+task = Task.init(project_name="autoencoder", task_name="ae_training") 
+
+import os
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -5,14 +10,22 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from datetime import datetime
 
-from datasets import ImgDataset
-from models import ConvEncoder, ConvDecoder
+from configs import ImgAEConfig
+from util import count_parameters
 
 class Pipeline():
-    def __init__(self, img_size=256, channels=3, emb_dim=1024, epoch=100, lr=0.0001, batch_size=32, encoder=None, decoder=None, csv_path=None, img_dir=None):
+    def __init__(self, img_size, channels, epoch, lr, batch_size, encoder, decoder, 
+                 loss_function, optimizer, train_set, test_set):
+        
+        # Using time for unique save directory name
+        self.save_dir = os.path.join("./runs/", datetime.now().strftime("%Y%b%d_%H:%M:%S"))
+        self.make_dirs(self.save_dir)
 
-        # Basic training hyperparameters
+        # Setting up basics of pipeline
+        self.img_size = img_size
+        self.channels = channels
         self.epochs = epoch
         self.lr = lr
         self.batch_size = batch_size
@@ -25,24 +38,17 @@ class Pipeline():
         self.decoder = decoder.to(self.device)
 
         # Setting up loss and optimizer
-        self.criterion = nn.MSELoss()
-        self.optimizer = optim.Adam(list(self.encoder.parameters()) + list(self.decoder.parameters()), lr=self.lr)
+        self.criterion = loss_function
+        self.optimizer = optimizer
 
-        # Loading train dataset/loader
-        transform = transforms.Compose([
-            transforms.Resize((img_size,img_size)),
-            transforms.ToTensor(),
-            # transforms.Normalize(0.5, 0.5)
-        ])
-
-        self.csv_path = csv_path
-        self.img_dir = img_dir
-        
-        self.train_set = ImgDataset(csv_path=self.csv_path, img_dir=self.img_dir, transform=transform)
-        self.train_loader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, num_workers=2)
+        # Loading train/test dataloaders
+        self.train_loader = DataLoader(train_set, batch_size=self.batch_size, shuffle=True, num_workers=2)
+        self.test_loader = DataLoader(test_set, batch_size=1, shuffle=True, num_workers=2)
 
         # Setting up Tensorboard 
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter(self.save_dir)
+
+        print(f"Param. #:\t {count_parameters(self.encoder) + count_parameters(self.decoder)}")
 
     def train(self):
 
@@ -75,44 +81,51 @@ class Pipeline():
 
                 running_loss += loss.item()
             
+            # Calculate and record training loss
             train_loss = running_loss / len(self.train_loader)
             self.writer.add_scalar("Loss/train", train_loss, ep+1)
+            # Update description bar
             pbar.set_description(f"EPOCH {ep+1} TRAIN LOSS: {train_loss:.4f}")
+    
+            # Save models every epoch
+            torch.save(self.encoder.state_dict(), f"{self.save_dir}/encoder_{ep}")
+
+    def make_dirs(self, save_dir):
+        if not os.path.exists("./runs/"):
+            os.mkdir("./runs/")
+        
+        if not os.path.exists(save_dir):
+            os.mkdir(save_dir)
 
 if __name__ == "__main__":
 
-    img_size = 256
-    img_channels = 3
-    emb_dim = 1024
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config_type", type=str)
 
-    # Initializing the encoder
-    # Separating the encoder and decoder so we can more easily use them separately after training
-    encoder = ConvEncoder(img_size=img_size, channels=img_channels, emb_dim=emb_dim)
+    args = parser.parse_args()
 
-    # Initialize and pass dummy data through encoder to set shape_before_flatten variable
-    dummy_data = torch.zeros(1, img_channels, img_size, img_size)
-    dummy_output = encoder(dummy_data)
-    shape_before_flat = encoder.shape_before_flatten
+    config_type = args.config_type
+    if config_type == "img":
+        config = ImgAEConfig()
 
-    # Initialize the decoder
-    decoder = ConvDecoder(emb_dim=emb_dim, shape_before_flattening=shape_before_flat, channels=img_channels)
+    task.connect(config, name="config")
 
-    # Initialize pipeline; Don't need to list all arguments, doing so for example
+    # Initialize pipeline    
     pipeline = Pipeline(
-        img_size=img_size,
-        channels=img_channels,
-        epoch=100,
-        lr=0.0001,
-        batch_size=32,
-        emb_dim=emb_dim,
-        encoder=encoder,
-        decoder=decoder,
-        # Will have to create this, expected rows: [img_name, label] (can be a dummy label)
-        csv_path="data/img.csv", 
-        # Points to the directory with imgs
-        img_dir="data/imgs/", 
+        img_size=config.img_size,
+        channels=config.channels,
+        epoch=config.epochs,
+        lr=config.lr,
+        batch_size=config.batch_size,
+        encoder=config.encoder,
+        decoder=config.decoder,
+        loss_function=config.loss_function,
+        optimizer=config.optimizer,
+        train_set=config.train_set,
+        test_set=config.test_set,
     )
 
     # Train AE
     pipeline.train()
+
 
