@@ -11,3 +11,7 @@ models.py: Contains the convolutional encoder and decoder for autoencoder pipeli
 datasets.py: Contains a custom dataset for images for training and testing.
 
 autoencoder.py: Contains a Pipeline object for initializing the autoencoder and training function for training. Also setups Tensorboard for logging.
+
+configs.py: Allows for the ability to specify different configs for experiments
+
+utils.py: Function for counting parameters of model
