@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-    
+
+from transformers import AutoModel
 class ConvEncoder(nn.Module):
     def __init__(self, img_size, channels, emb_dim):
         super().__init__()
@@ -78,4 +79,51 @@ class ConvDecoder(nn.Module):
         x = F.sigmoid(self.conv1(x))
 
         return x
+
+class HFImageEncoder(nn.Module):
+    def __init__(self, model_name, is_trainable):
+        super().__init__()
+
+        self.image_encoder = AutoModel.from_pretrained(model_name)
+        for p in self.image_encoder.parameters():
+            p.requires_grad = is_trainable
+
+        # Using CLS token to represent text
+        self.target_token = 0
+
+    def forward(self, x):
+        output = self.image_encoder(pixel_values=x)
+        return output['last_hidden_state'][:, self.target_token, :]
     
+class HFImageDecoder(nn.Module):
+    def __init__(self, emb_dim):
+        super().__init__()
+
+        # Store parameters
+        self.emb_dim = emb_dim
+        self.shape_before_flattening = [128, 28, 28]
+
+        # FC for unflattening
+        self.fc = nn.Linear(self.emb_dim, np.prod(self.shape_before_flattening))
+
+        # Transpose Conv layers
+        self.deconv1 = nn.ConvTranspose2d(128, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.deconv2 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.deconv3 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
+
+        # Conv layer to get channels to correct size, but retain other dimensions
+        self.conv1 = nn.Conv2d(32, 3, kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x):
+        
+        # Expanding the dimensions to where we can unflatten them
+        x = self.fc(x)
+        x = x.view(x.size(0), *self.shape_before_flattening)
+
+        x = F.relu(self.deconv1(x))
+        x = F.relu(self.deconv2(x))
+        x = F.relu(self.deconv3(x))
+
+        x = F.sigmoid(self.conv1(x))
+
+        return x

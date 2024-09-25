@@ -34,6 +34,37 @@ class ImgDataset(Dataset):
 
         return img, label
     
+class HFImageDataset(Dataset):
+    def __init__(self, csv_path, img_dir, preprocess=None):
+        # Format of annotations file is rows of [img_name, label]
+        self.annotations = pd.read_csv(csv_path)
+        # Path to data directory storing the images
+        self.img_dir = img_dir
+        # Uses HuggingFace preprocessing to transform image
+        self.preprocess = preprocess
+
+    def __len__(self):
+        return len(self.annotations)
+    
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        # Returns the full path to the image using the img name stored in the csv file at idx row, col 0
+        img_name = os.path.join(self.img_dir, self.annotations.iloc[idx, 0])
+
+        img = Image.open(img_name)
+
+        # Returns the label to the specific image stored in the csv file at idx row, col 1
+        label = int(self.annotations.iloc[idx, 1])
+
+        # This should always be true
+        if self.preprocess:
+            img = self.preprocess(img, return_tensors="pt")['pixel_values'].squeeze()
+
+        return img, label
+    
+    
 class TextDataset(Dataset):
     def __init__(self, csv_path, transform=None):
         # Format of annotations file is rows of [text, label]
