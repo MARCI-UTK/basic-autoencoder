@@ -72,7 +72,7 @@ class Pipeline():
                 running_loss += loss.item()
             
             # Calculate and record training loss
-            train_loss = running_loss / len(self.train_loader)
+            train_loss = running_loss / len(self.train_dataloader)
             self.writer.add_scalar("Loss/train", train_loss, ep+1)
 
             valid_loss = self.valid()

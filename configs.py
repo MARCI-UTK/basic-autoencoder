@@ -81,7 +81,7 @@ class HFImageConfig(object):
         self.encoder_is_trainable = True
         self.encoder = HFImageEncoder(model_name=self.encoder_name,
                                       is_trainable=self.encoder_is_trainable)
-        self.preprocessor = AutoProcessor.from_pretrained(self.encoder_name)
+        self.preprocessor = AutoProcessor.from_pretrained(self.encoder_name, use_fast=True)
 
         # Decoder
         # This is purely for logging
